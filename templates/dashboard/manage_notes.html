@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-3">
+    <div class="card shadow-sm border-0">
+        <div class="card-body p-3">
+            <h4 class="text-primary mb-1">{{ subject_name }} ({{ subject_code }})</h4>
+            <p class="text-muted small mb-2">
+                <strong>Batch:</strong> {{ batch_id }} | <strong>Sem:</strong> {{ semester }} | <strong>Year:</strong>
+                {{ admission_year }}
+            </p>
+
+            <!-- Upload Form -->
+            <form id="upload-form" action="{{ url_for('auth.upload_notes') }}" method="POST"
+                  enctype="multipart/form-data">
+                <input type="hidden" name="course_id" value="{{ course_id }}">
+                <input type="hidden" name="admission_year" value="{{ admission_year }}">
+                <input type="hidden" name="semester" value="{{ semester }}">
+                <input type="hidden" name="batch_id" value="{{ batch_id }}">
+                <input type="hidden" name="subject_code" value="{{ subject_code }}">
+
+                <div class="d-flex align-items-center gap-2">
+                    <input type="file" name="files" id="file-input" class="form-control form-control-sm w-50" multiple
+                           required>
+                    <button type="submit" class="btn btn-primary btn-sm" id="upload-btn">
+                        <i class="fas fa-upload"></i> Upload
+                    </button>
+                </div>
+                <small class="text-muted d-block mt-1">Max total size: 200MB</small>
+            </form>
+
+            <!-- Progress Bar -->
+            <div class="progress mt-2" style="height: 10px; display: none;">
+                <div id="progress-bar" class="progress-bar bg-success" role="progressbar" style="width: 0%;"></div>
+            </div>
+            <p id="status" class="text-muted small mt-1"></p>
+
+            <hr class="my-2">
+
+            <!-- List of Existing Notes -->
+            <h6 class="mb-2">Existing Notes</h6>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle shadow-sm">
+                    <thead class="table-dark">
+                    <tr>
+                        <th class="small">File Name</th>
+                        <th class="text-end small">Actions</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for file in existing_notes %}
+                    <tr>
+                        <td class="small">{{ file }}</td>
+                        <td class="text-end">
+                            <a href="{{ url_for('auth.download_file', filename=file, course_id=course_id, admission_year=admission_year, semester=semester, batch_id=batch_id, subject_code=subject_code) }}"
+                               class="btn btn-success btn-sm">
+                                <i class="fas fa-download"></i>
+                            </a>
+                            <form action="{{ url_for('auth.delete_note') }}" method="POST" class="d-inline">
+                                <input type="hidden" name="file_name" value="{{ file }}">
+                                <input type="hidden" name="course_id" value="{{ course_id }}">
+                                <input type="hidden" name="admission_year" value="{{ admission_year }}">
+                                <input type="hidden" name="semester" value="{{ semester }}">
+                                <input type="hidden" name="batch_id" value="{{ batch_id }}">
+                                <input type="hidden" name="subject_code" value="{{ subject_code }}">
+                                <button type="submit" class="btn btn-danger btn-sm"
+                                        onclick="return confirm('Delete this note?');">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="2" class="text-center small text-muted">No notes uploaded yet.</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const form = document.getElementById("upload-form");
+    const fileInput = document.getElementById("file-input");
+    const progressBar = document.getElementById("progress-bar");
+    const progressContainer = document.querySelector(".progress");
+    const statusText = document.getElementById("status");
+    const uploadBtn = document.getElementById("upload-btn");
+    let eventSource = null;
+
+    fileInput.addEventListener("change", function () {
+        let totalSize = 0;
+        for (let file of fileInput.files) {
+            totalSize += file.size;
+        }
+
+        if (totalSize > 200 * 1024 * 1024) { // 200MB limit
+            alert("Total file size exceeds 200MB. Please select smaller files.");
+            fileInput.value = ""; // Reset file input
+        }
+    });
+
+    // Function to close SSE connection
+    function closeEventSource() {
+        if (eventSource) {
+            eventSource.close();
+            eventSource = null;
+        }
+    }
+
+    form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        let totalSize = 0;
+        for (let file of fileInput.files) {
+            totalSize += file.size;
+        }
+
+        if (totalSize > 200 * 1024 * 1024) {
+            alert("Total file size exceeds 200MB. Please select smaller files.");
+            return;
+        }
+
+        const formData = new FormData(form);
+
+        // Clear any previous 'files' entries that might be in the formData
+        formData.delete('files');
+
+        // Add each file to formData
+        for (let file of fileInput.files) {
+            formData.append("files", file);
+        }
+
+        progressContainer.style.display = "block";
+        progressBar.style.width = "0%";
+        progressBar.classList.remove("bg-danger", "bg-success");
+        statusText.textContent = "Preparing upload...";
+        uploadBtn.disabled = true;
+
+        // Close any existing SSE connection
+        closeEventSource();
+
+        // Use XMLHttpRequest for initial upload
+        const xhr = new XMLHttpRequest();
+
+        // Setup progress event for the upload part
+        xhr.upload.addEventListener("progress", function (e) {
+            if (e.lengthComputable) {
+                let percent = Math.round((e.loaded / e.total) * 100);
+                // For client-side upload progress, we'll use 0-15%
+                let adjustedPercent = Math.min(15, percent / 7);
+                progressBar.style.width = adjustedPercent + "%";
+                statusText.textContent = `Uploading files to server... ${percent}%`;
+            }
+        });
+
+        // Setup completion handler for the initial upload
+        xhr.addEventListener("load", function () {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                try {
+                    const response = JSON.parse(xhr.responseText);
+                    if (response.success && response.upload_id) {
+                        statusText.textContent = "Files received, processing...";
+
+                        // Start listening for server-side progress updates
+                        connectToProgressEvents(response.upload_id);
+                    } else {
+                        throw new Error("Upload failed in response.");
+                    }
+                } catch (error) {
+                    console.error("Error parsing response:", error);
+                    statusText.textContent = "Error during upload processing.";
+                    progressBar.classList.add("bg-danger");
+                    uploadBtn.disabled = false;
+                }
+            } else {
+                statusText.textContent = `Error: Server returned ${xhr.status}`;
+                progressBar.classList.add("bg-danger");
+                uploadBtn.disabled = false;
+            }
+        });
+
+        // Setup error handler
+        xhr.addEventListener("error", function () {
+            statusText.textContent = "Network error during upload.";
+            progressBar.classList.add("bg-danger");
+            uploadBtn.disabled = false;
+        });
+
+        // Send the request
+        xhr.open("POST", form.action, true);
+        xhr.send(formData);
+    });
+
+    // Function to connect to Server-Sent Events for progress updates
+    function connectToProgressEvents(uploadId) {
+        // Create a new EventSource connection to the server
+        eventSource = new EventSource(`/teacher/upload_progress/${uploadId}`);
+
+        // Handle incoming progress events
+        eventSource.addEventListener('message', function(event) {
+            try {
+                const data = JSON.parse(event.data);
+
+                // Update progress bar - server processing is 15-100%
+                if (data.progress !== undefined) {
+                    // The first 15% was for client-side upload, now 15-100% is server processing
+                    const serverProgress = Math.max(15, data.progress);
+                    progressBar.style.width = serverProgress + "%";
+                }
+
+                // Update status message
+                if (data.status) {
+                    if (data.status === 'complete') {
+                        statusText.textContent = "Upload complete!";
+                        progressBar.classList.add("bg-success");
+                        setTimeout(() => location.reload(), 1500);
+                        closeEventSource();
+                    } else if (data.status === 'error') {
+                        statusText.textContent = data.message || "Error during upload.";
+                        progressBar.classList.add("bg-danger");
+                        uploadBtn.disabled = false;
+                        closeEventSource();
+                    } else {
+                        statusText.textContent = data.status;
+                    }
+                }
+
+                // Show file processing progress if available
+                if (data.processed_files !== undefined && data.total_files !== undefined) {
+                    const fileProgress = `(${data.processed_files}/${data.total_files} files)`;
+                    statusText.textContent += ` ${fileProgress}`;
+                }
+            } catch (error) {
+                console.error("Error parsing SSE message:", error);
+            }
+        });
+
+        // Handle connection errors
+        eventSource.addEventListener('error', function() {
+            statusText.textContent = "Lost connection to server. Reload to see if upload completed.";
+            closeEventSource();
+        });
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Teachers{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <!-- Welcome Header -->
+    <div class="text-center mb-4">
+        <h2 class="text-primary fw-bold">Welcome</h2>
+    </div>
+
+    <!-- Assigned Subjects Section -->
+    <div class="card shadow-lg border-0 rounded-4" style="background-color: #f8f9fa;">
+        <div class="card-header text-white rounded-top-4" style="background: linear-gradient(135deg, #6EC6FF, #4A90E2);">
+            <h4 class="mb-0 text-center">📚 Assigned Subjects</h4>
+        </div>
+        <div class="card-body p-4">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle text-center">
+                    <thead style="background-color: #4A90E2; color: white;">
+                        <tr>
+                            <th>📖 Course</th>
+                            <th>📘 Subject</th>
+                            <th>🔢 Code</th>
+                            <th>📅 Year</th>
+                            <th>🎓 Semester</th>
+                            <th>🆔 Batch</th>
+                            <th colspan="2">✅ Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody style="background-color: #ffffff;">
+                        {% for subject in assigned_subjects %}
+                        <tr class="fw-semibold">
+                            <td>{{ subject.course_name }}</td>
+                            <td>{{ subject.subject_name }}</td>
+                            <td>{{ subject.subject_code }}</td>
+                            <td>{{ subject.year }}</td>
+                            <td>{{ subject.semester }}</td>
+                            <td>{{ subject.batch_id }}</td>
+                            <td>
+                                <a href="{{ url_for('auth.take_attendance',
+                                        subject_code=subject.subject_code,
+                                        batch_id=subject.batch_id,
+                                        admission_year=subject.year,
+                                        course_id=subject.course_id,
+                                        semester=subject.semester) }}"
+                                   class="btn btn-outline-success btn-sm shadow-sm fw-bold px-3">
+                                    📝 Take Attendance
+                                </a>
+                            </td>
+                            <td>
+                                <a href="{{ url_for('auth.manage_notes',
+                                        course_id=subject.course_id,
+                                        admission_year=subject.year,
+                                        semester=subject.semester,
+                                        batch_id=subject.batch_id,
+                                        subject_code=subject.subject_code) }}"
+                                   class="btn btn-outline-warning btn-sm shadow-sm fw-bold px-3">
+                                    📂 Manage Notes
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
